@@ -246,6 +246,13 @@ RUN set -ex \
     && rm -rf /tmp/slurm-config
 COPY --chown=slurm:slurm --chmod=0600 examples /root/examples
 
+# Tutorial 1 (BINF90018): the 'pokemon' package renders the ASCII art that the
+# slurm-pokemon job prints. Bake it into the image so it ships on every node
+# (slurmctld and the cpu-workers share this image) and survives `make down/up`.
+# yum's pip3 wrapper is unreliable on Rocky 9, so bootstrap pip via ensurepip.
+RUN python3 -m ensurepip --upgrade \
+    && python3 -m pip install --no-cache-dir pokemon
+
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
