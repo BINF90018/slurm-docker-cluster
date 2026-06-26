@@ -9,21 +9,27 @@ set -e
 detect_replica_number() {
     local service_name="$1"
     local max_replicas="${2:-64}"
-    local my_ip
+    local my_ip i resolved attempt
     my_ip=$(hostname -i 2>/dev/null | awk '{print $1}')
 
-    for i in $(seq 1 "$max_replicas"); do
-        local resolved
-        resolved=$(getent hosts "${COMPOSE_PROJECT_NAME}-${service_name}-${i}" 2>/dev/null | awk '{print $1}')
-        if [ "$resolved" = "$my_ip" ]; then
-            echo "$i"
-            return 0
-        elif [ -z "$resolved" ]; then
-            break
-        fi
+    # Docker's embedded DNS may not have registered our own compose alias yet
+    # when we start (workers boot together the moment slurmctld is healthy), so a
+    # single empty lookup of our own name would wrongly send us to the fallback.
+    # Retry the whole scan a few times to absorb that DNS registration lag.
+    for attempt in $(seq 1 10); do
+        for i in $(seq 1 "$max_replicas"); do
+            resolved=$(getent hosts "${COMPOSE_PROJECT_NAME}-${service_name}-${i}" 2>/dev/null | awk '{print $1}')
+            if [ "$resolved" = "$my_ip" ]; then
+                echo "$i"
+                return 0
+            elif [ -z "$resolved" ]; then
+                break
+            fi
+        done
+        sleep 1
     done
 
-    # Fallback: use container ID
+    # Fallback: use container ID (caller tolerates the non-zero return)
     hostname
     return 1
 }
@@ -154,7 +160,7 @@ then
     # Derive a sequential node name from the Docker Compose replica number.
     # e.g., slurm-cpu-worker-1 -> c1, slurm-cpu-worker-2 -> c2
     # Falls back to container ID if replica detection fails.
-    REPLICA=$(detect_replica_number "cpu-worker")
+    REPLICA=$(detect_replica_number "cpu-worker" || true)
     NODE_NAME="c${REPLICA}"
     hostname "${NODE_NAME}"
 
@@ -181,7 +187,7 @@ then
     # Derive a sequential node name from the Docker Compose replica number.
     # e.g., slurm-gpu-worker-1 -> g1, slurm-gpu-worker-2 -> g2
     # Falls back to container ID if replica detection fails.
-    REPLICA=$(detect_replica_number "gpu-worker")
+    REPLICA=$(detect_replica_number "gpu-worker" || true)
     NODE_NAME="g${REPLICA}"
     hostname "${NODE_NAME}"
 

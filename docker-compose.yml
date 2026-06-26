@@ -115,6 +115,10 @@ services:
   cpu-worker:
     image: slurm-docker-cluster:${SLURM_VERSION:-25.11.2}
     command: ["slurmd-cpu"]
+    # Self-heal the dynamic-registration DNS race: if a worker loses the boot
+    # race and exits before its own compose alias resolves, restart it — by the
+    # retry it runs alone and registers cleanly (e.g. c2).
+    restart: on-failure
     working_dir: /data
     privileged: true
     environment:
@@ -145,6 +149,7 @@ services:
   gpu-worker:
     image: slurm-docker-cluster:${SLURM_VERSION:-25.11.2}
     command: ["slurmd-gpu"]
+    restart: on-failure
     working_dir: /data
     privileged: true
     profiles: ["gpu"]
